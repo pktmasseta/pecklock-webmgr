@@ -14,9 +14,10 @@ proxies = {
     'https': 'socks5h://localhost:9050'
 }
 
-endpoints = {'/tortest', 
+endpoints = {'/door/info', 
              '/door/unlock', 
              '/card/register', 
+             '/card/test/register',
              '/card/get/lastfail', 
              '/card/get/bysponsor', 
              '/card/get/all',
@@ -56,6 +57,22 @@ def process():
         return Response('Invalid token.', status=400)
     if not flask.request.headers.get(hdr_performer_name):
         return Response('Performer not set.', status=400)
+
+@app.route('/info')
+def info():
+    tor_url = get_tor_url()
+    if not tor_url:
+        return Response('Tor hidden service URL not set', status=400)
+    non_tor_ip = requests.get('https://ident.me').text
+    sess = init_tor_session()
+    tor_ip = sess.get('https://ident.me').text
+    test_tor = sess.get(tor_url).text
+    r = sess.get(get_tor_url() + '/door/info', 
+            headers={
+                hdr_token_name: flask.request.headers.get(hdr_token_name),
+                hdr_performer_name: flask.request.headers.get(hdr_performer_name)    
+            })
+    return Response(r.text, status=r.status_code)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
