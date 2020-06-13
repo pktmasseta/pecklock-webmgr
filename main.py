@@ -14,17 +14,20 @@ proxies = {
     'https': 'socks5h://localhost:9050'
 }
 
-endpoints = {'tortest', 
-             'unlock', 
-             'last_failed_card', 
-             'register_last_card', 
-             'get_sponsored_cards', 
-             'get_all_cards',
-             'deactivate', 
-             'activate',
-             'adjust'}
+endpoints = {'/tortest', 
+             '/door/unlock', 
+             '/card/register', 
+             '/card/get/lastfail', 
+             '/card/get/bysponsor', 
+             '/card/get/all',
+             '/card/get/byid',
+             '/card/deactivate', 
+             '/card/activate',
+             '/card/adjust',
+             }
 
-token_name = 'Pecklock-Token'
+hdr_token_name = 'Pecklock-Token'
+hdr_performer_name = 'Pecklock-Performed-By'
 
 def check_token(token):
     valid_tokens = os.getenv('VALID_TOKENS').split(':')
@@ -40,14 +43,19 @@ def init_tor_session():
 
 @app.before_request
 def process():
-    path_items = flask.request.path.split('/')
-    for i in range(len(path_items)):
-        if len(path_items[i]) > 0:
-            break
-    if path_items[i] not in endpoints:
-        return Response('Invalid endpoint.', status=400)
-    if not flask.request.headers.get(token_name):
+    path = '/' + '/'.join([s for s in flask.request.path.split('/') if len(s) > 0])
+    if len(path) > 1:
+        is_valid_path = False
+        for ep in endpoints:
+            if path.startswith(ep):
+                is_valid_path = True
+                break
+        if not is_valid_path:
+            return Response('Invalid endpoint.', status=400)
+    if not flask.request.headers.get(hdr_token_name):
         return Response('Invalid token.', status=400)
+    if not flask.request.headers.get(hdr_performer_name):
+        return Response('Performer not set.', status=400)
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
@@ -56,102 +64,12 @@ def proxy(path):
     if not tor_url:
         return Response('Tor hidden service URL not set', status=400)
     sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/' + path, headers={token_name: flask.request.headers.get('Pecklock-Token')})
+    r = sess.get(get_tor_url() + '/' + path, 
+            headers={
+                hdr_token_name: flask.request.headers.get(hdr_token_name),
+                hdr_performer_name: flask.request.headers.get(hdr_performer_name)    
+            })
     return Response(r.text, status=r.status_code)
-
-"""
-@app.route('/tortest/<token>')
-def tortest(token):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    tor_url = get_tor_url()
-    if not tor_url:
-        return Response('Tor hidden service URL not set', status=400)
-    non_tor_ip = requests.get('https://ident.me').text
-    sess = init_tor_session()
-    tor_ip = sess.get('https://ident.me').text
-    test_tor = sess.get(tor_url, headers={'Pecklock-Token': token}).text
-    return Response("Hello %s (%s)\n%s" % (non_tor_ip, tor_ip, test_tor))
-
-
-
-@app.route('/unlock/<token>/<name>')
-def unlock(token, name):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/unlock/' + name, headers={'Pecklock-Token': flask.request.headers.get('Pecklock-Token')})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/last_failed_card/<token>')
-def last_failed_card(token):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/last_failed_card', headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/register_last_card/<token>/<as_name>/<with_sponsor>')
-def register_last_card(token, as_name, with_sponsor):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/register_last_card/' + as_name + '/' + with_sponsor, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/get_sponsored_cards/<token>/<sponsor>')
-def get_sponsored_cards(token, sponsor):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/get_sponsored_cards/' + sponsor, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/deactivate/<token>/<sponsor_name>/<card_id>')
-def deactivate(token, sponsor_name, card_id):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/deactivate/' + sponsor_name + '/' + card_id, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/activate/<token>/<sponsor_name>/<card_id>')
-def activate(token, sponsor_name, card_id):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/activate/' + sponsor_name + '/' + card_id, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/adjust/<token>/<sponsor_name>/<card_id>/<minutes>/<hours>/<days>/<weeks>/<months>')
-def adjust(token, sponsor_name, card_id, minutes, hours, days, weeks, months):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/adjust/' + sponsor_name + '/' + card_id + '/' + minutes + '/' + hours + '/' + days + '/' + weeks + '/' + months, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/get_all_cards/<token>/<web_name>')
-def get_cards(token, web_name):
-    is_invalid, deny_resp = check_token(token)
-    if is_invalid:
-        return deny_resp
-    sess = init_tor_session()
-    r = sess.get(get_tor_url() + '/admin/get_all_cards/' + web_name, headers={'Pecklock-Token': token})
-    return Response(r.text, status=r.status_code)
-
-@app.route('/')
-def index():
-    return Response('Hello world')
-"""
 
 if __name__ == '__main__':
     app.run(main)
